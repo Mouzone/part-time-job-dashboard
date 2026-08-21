@@ -1,0 +1,37 @@
+name: Weekly job search
+
+on:
+  schedule:
+    # Every Monday 13:00 UTC (9am ET)
+    - cron: "0 13 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  find-jobs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Find new job leads
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node scripts/find-jobs.mjs
+
+      - name: Commit updated job data
+        run: |
+          git config user.name "job-dashboard-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if ! git diff --quiet -- data/jobs.json; then
+            git add data/jobs.json
+            git commit -m "Weekly job search update"
+            git push
+          else
+            echo "No new job leads found."
+          fi

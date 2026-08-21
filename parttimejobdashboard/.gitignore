@@ -1,0 +1,9 @@
+node_modules
+package-lock.json
+.next
+out
+.vercel
+*.local
+.DS_Store
+npm-debug.log*
+tsconfig.tsbuildinfo
