@@ -15,16 +15,18 @@ export type Job = {
   dateFound: string;
 };
 
-type AppliedState = Record<string, { applied: boolean; dateApplied: string | null }>;
+type JobStatus = "none" | "applied" | "skipped";
+type StatusState = Record<string, { status: JobStatus; dateApplied: string | null }>;
 
-const STORAGE_KEY = "job-dashboard-applied-v1";
+const STORAGE_KEY = "job-dashboard-status-v2";
+const OLD_STORAGE_KEY = "job-dashboard-applied-v1";
 
 type SortKey = "dateFound" | "industry";
 type SortDir = "asc" | "desc";
-type FilterMode = "all" | "applied" | "not-applied";
+type FilterMode = "all" | "not-applied" | "applied" | "skipped";
 
 export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
-  const [applied, setApplied] = useState<AppliedState>({});
+  const [status, setStatusState] = useState<StatusState>({});
   const [filter, setFilter] = useState<FilterMode>("all");
   const [sortKey, setSortKey] = useState<SortKey>("dateFound");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -33,7 +35,23 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setApplied(JSON.parse(raw));
+      if (raw) {
+        setStatusState(JSON.parse(raw));
+      } else {
+        // one-time migration from the old applied-only format
+        const oldRaw = localStorage.getItem(OLD_STORAGE_KEY);
+        if (oldRaw) {
+          const old = JSON.parse(oldRaw) as Record<
+            string,
+            { applied: boolean; dateApplied: string | null }
+          >;
+          const migrated: StatusState = {};
+          for (const [id, v] of Object.entries(old)) {
+            if (v.applied) migrated[id] = { status: "applied", dateApplied: v.dateApplied };
+          }
+          setStatusState(migrated);
+        }
+      }
     } catch {
       // ignore corrupt/unavailable storage
     }
@@ -43,20 +61,21 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(applied));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(status));
     } catch {
       // ignore write failures (private browsing, quota)
     }
-  }, [applied, hydrated]);
+  }, [status, hydrated]);
 
-  function toggleApplied(id: string) {
-    setApplied((prev) => {
-      const wasApplied = prev[id]?.applied ?? false;
+  function setJobStatus(id: string, next: JobStatus) {
+    setStatusState((prev) => {
+      const current = prev[id]?.status ?? "none";
+      const resolved = current === next ? "none" : next;
       return {
         ...prev,
         [id]: {
-          applied: !wasApplied,
-          dateApplied: !wasApplied ? new Date().toISOString().slice(0, 10) : null,
+          status: resolved,
+          dateApplied: resolved === "applied" ? new Date().toISOString().slice(0, 10) : null,
         },
       };
     });
@@ -73,9 +92,10 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
 
   const visibleJobs = useMemo(() => {
     let list = jobs.filter((job) => {
-      const isApplied = applied[job.id]?.applied ?? false;
-      if (filter === "applied") return isApplied;
-      if (filter === "not-applied") return !isApplied;
+      const jobStatus = status[job.id]?.status ?? "none";
+      if (filter === "applied") return jobStatus === "applied";
+      if (filter === "skipped") return jobStatus === "skipped";
+      if (filter === "not-applied") return jobStatus === "none";
       return true;
     });
 
@@ -90,9 +110,10 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
     });
 
     return list;
-  }, [jobs, applied, filter, sortKey, sortDir]);
+  }, [jobs, status, filter, sortKey, sortDir]);
 
-  const appliedCount = jobs.filter((j) => applied[j.id]?.applied).length;
+  const appliedCount = jobs.filter((j) => status[j.id]?.status === "applied").length;
+  const skippedCount = jobs.filter((j) => status[j.id]?.status === "skipped").length;
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
@@ -111,6 +132,7 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
               ["all", "All"],
               ["not-applied", "Not applied"],
               ["applied", "Applied"],
+              ["skipped", "Skipped"],
             ] as [FilterMode, string][]
           ).map(([mode, label]) => (
             <button
@@ -127,7 +149,7 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
           ))}
         </div>
         <p className="text-sm text-slate-500">
-          {appliedCount} / {jobs.length} applied
+          {appliedCount} / {jobs.length} applied · {skippedCount} skipped
         </p>
       </div>
 
@@ -136,6 +158,7 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Applied</th>
+              <th className="px-4 py-3">Skip</th>
               <th className="px-4 py-3">Employer</th>
               <th className="px-4 py-3">Role</th>
               <th
@@ -157,15 +180,27 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {visibleJobs.map((job) => {
-              const state = applied[job.id];
+              const jobStatus = status[job.id]?.status ?? "none";
+              const dateApplied = status[job.id]?.dateApplied ?? null;
               return (
-                <tr key={job.id} className="hover:bg-slate-50">
+                <tr
+                  key={job.id}
+                  className={`hover:bg-slate-50 ${jobStatus === "skipped" ? "opacity-50" : ""}`}
+                >
                   <td className="px-4 py-3">
                     <input
                       type="checkbox"
-                      checked={state?.applied ?? false}
-                      onChange={() => toggleApplied(job.id)}
+                      checked={jobStatus === "applied"}
+                      onChange={() => setJobStatus(job.id, "applied")}
                       className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={jobStatus === "skipped"}
+                      onChange={() => setJobStatus(job.id, "skipped")}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-400 focus:ring-slate-500"
                     />
                   </td>
                   <td className="px-4 py-3 font-medium text-slate-900">{job.employer}</td>
@@ -173,7 +208,7 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
                   <td className="px-4 py-3 text-slate-700">{job.industry}</td>
                   <td className="px-4 py-3 text-slate-500">{job.commute}</td>
                   <td className="px-4 py-3 text-slate-500">{job.dateFound}</td>
-                  <td className="px-4 py-3 text-slate-500">{state?.dateApplied ?? "—"}</td>
+                  <td className="px-4 py-3 text-slate-500">{dateApplied ?? "—"}</td>
                   <td className="px-4 py-3">
                     <a
                       href={job.applyUrl}
@@ -189,7 +224,7 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
             })}
             {visibleJobs.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
                   No jobs match this filter.
                 </td>
               </tr>
@@ -199,8 +234,10 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
       </div>
 
       <p className="mt-4 text-xs text-slate-400">
-        Applied status is saved in this browser only. Commute times are estimates — verify
-        door-to-door time before committing.
+        Applied/Skip status is saved in this browser only. Skipped jobs are hidden from
+        &quot;Not applied&quot; but still show under &quot;All&quot; or &quot;Skipped,&quot; and
+        stay in the underlying data so the weekly search won&apos;t re-add them as new. Commute
+        times are estimates — verify door-to-door time before committing.
       </p>
     </main>
   );
