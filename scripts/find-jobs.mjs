@@ -52,7 +52,10 @@ async function main() {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-5",
+      // Cheapest current Claude model. Web search + structured JSON
+      // extraction is well within what Haiku handles reliably, and this
+      // job runs weekly so cost compounds.
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: USER_PROMPT }],
