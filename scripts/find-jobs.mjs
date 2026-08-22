@@ -16,7 +16,19 @@ const MAX_JOBS = 60;
 
 const SYSTEM_PROMPT = `You are a job-search research assistant. You find real, currently-open
 part-time job listings and return them as strict JSON. Never invent listings — only include
-jobs you found through web search with a real application URL.`;
+jobs you found through web search with a real application URL.
+
+Your #1 priority is URL precision. The applyUrl for every job MUST link to the specific,
+individual job posting page — the page that describes that one role and has an "Apply" button
+for it. Never use:
+- A general careers page or job-board homepage (e.g. "walmart.com/careers")
+- A search results page that lists many jobs
+- A company homepage or "about us" page
+If you cannot find the direct posting URL for a job, exclude that job entirely.
+
+Your #2 priority is job specificity. Each listing must be for a concrete, identifiable
+position at a specific location — not a vague "we're hiring" announcement or a seasonal
+recruiting blurb with no role details.`;
 
 const USER_PROMPT = `Search the web for part-time job openings that meet ALL of these criteria:
 
@@ -27,18 +39,38 @@ const USER_PROMPT = `Search the web for part-time job openings that meet ALL of 
 3. Part-time (not full-time only).
 4. Currently open / actively hiring, not expired.
 
+CRITICAL — URL AND JOB SPECIFICITY RULES:
+
+- The "applyUrl" MUST be the direct URL to the specific job posting — the individual page
+  for that one role, not a general careers page, not a search-results listing, and not a
+  company homepage. Examples of GOOD URLs:
+    • https://www.indeed.com/viewjob?jk=abc123  (specific Indeed posting)
+    • https://walmart.wd5.myworkdayjobs.com/.../job/...  (specific Workday posting)
+    • https://www.linkedin.com/jobs/view/...  (specific LinkedIn posting)
+  Examples of BAD URLs (do NOT use these):
+    • https://www.walmart.com/careers
+    • https://www.indeed.com/q-part-time-l-Brooklyn,-NY-jobs.html
+    • https://www.mcdonalds.com/us/en-us/careers.html
+- Before including a job, click through or search until you have the EXACT posting URL.
+  If the only URL you can find is a general careers page, skip that job — do not include it.
+- The "role" field must be the specific job title as shown on the posting (e.g.
+  "Part-Time Sales Associate", "Weekend Cashier", "Barista — Part Time") — not a vague
+  label like "Team Member" or "Staff" unless that is the actual posting title.
+- The "employer" must be the specific franchise/location (e.g. "Dunkin' Bensonhurst") not
+  just the brand name when a specific store is identifiable.
+
 Find up to 15 such listings. For each one, respond with ONLY a JSON array (no prose, no markdown
 fences) where each item has exactly these fields:
 
 [
   {
-    "employer": "string",
-    "role": "string",
+    "employer": "string — specific location/franchise if identifiable",
+    "role": "string — exact job title from the posting",
     "industry": "Food service" | "Retail / customer service" | "Office / admin" | "Other",
-    "address": "string",
+    "address": "string — street address of the specific location",
     "commute": "short human-readable estimate, e.g. '~15 min bus'",
-    "applyUrl": "direct URL to apply",
-    "applyMethod": "short label, e.g. 'Indeed listing' or 'Company careers site'",
+    "applyUrl": "direct URL to the specific job posting page",
+    "applyMethod": "short label, e.g. 'Indeed listing' or 'Workday posting'",
     "notes": "short optional context, empty string if none"
   }
 ]`;
@@ -63,7 +95,7 @@ async function main() {
         {
           type: "web_search_20250305",
           name: "web_search",
-          max_uses: 8,
+          max_uses: 20,
         },
       ],
     }),
