@@ -15,7 +15,7 @@ export type Job = {
   dateFound: string;
 };
 
-type JobStatus = "none" | "applied" | "skipped";
+type JobStatus = "none" | "applied" | "skipped" | "hidden";
 type StatusState = Record<string, { status: JobStatus; dateApplied: string | null }>;
 
 const STORAGE_KEY = "job-dashboard-status-v2";
@@ -23,7 +23,7 @@ const OLD_STORAGE_KEY = "job-dashboard-applied-v1";
 
 type SortKey = "dateFound" | "industry";
 type SortDir = "asc" | "desc";
-type FilterMode = "all" | "not-applied" | "applied" | "skipped";
+type FilterMode = "all" | "not-applied" | "applied" | "skipped" | "hidden";
 
 export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
   const [status, setStatusState] = useState<StatusState>({});
@@ -95,8 +95,9 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
       const jobStatus = status[job.id]?.status ?? "none";
       if (filter === "applied") return jobStatus === "applied";
       if (filter === "skipped") return jobStatus === "skipped";
+      if (filter === "hidden") return jobStatus === "hidden";
       if (filter === "not-applied") return jobStatus === "none";
-      return true;
+      return jobStatus !== "hidden";
     });
 
     list = [...list].sort((a, b) => {
@@ -114,6 +115,22 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
 
   const appliedCount = jobs.filter((j) => status[j.id]?.status === "applied").length;
   const skippedCount = jobs.filter((j) => status[j.id]?.status === "skipped").length;
+  const hiddenCount = jobs.filter((j) => status[j.id]?.status === "hidden").length;
+
+  function exportHiddenIds() {
+    const hiddenIds = jobs
+      .filter((j) => status[j.id]?.status === "hidden")
+      .map((j) => j.id);
+    const blob = new Blob([JSON.stringify(hiddenIds, null, 2) + "\n"], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "hidden-ids.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
@@ -133,6 +150,7 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
               ["not-applied", "Not applied"],
               ["applied", "Applied"],
               ["skipped", "Skipped"],
+              ["hidden", "Hidden"],
             ] as [FilterMode, string][]
           ).map(([mode, label]) => (
             <button
@@ -148,9 +166,19 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
             </button>
           ))}
         </div>
-        <p className="text-sm text-slate-500">
-          {appliedCount} / {jobs.length} applied · {skippedCount} skipped
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-slate-500">
+            {appliedCount} / {jobs.length} applied · {skippedCount} skipped · {hiddenCount} hidden
+          </p>
+          {hiddenCount > 0 && (
+            <button
+              onClick={exportHiddenIds}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Export hidden IDs
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -176,16 +204,18 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
               </th>
               <th className="px-4 py-3">Date applied</th>
               <th className="px-4 py-3">Apply</th>
+              <th className="px-4 py-3">Hide</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {visibleJobs.map((job) => {
               const jobStatus = status[job.id]?.status ?? "none";
               const dateApplied = status[job.id]?.dateApplied ?? null;
+              const isHidden = jobStatus === "hidden";
               return (
                 <tr
                   key={job.id}
-                  className={`hover:bg-slate-50 ${jobStatus === "skipped" ? "opacity-50" : ""}`}
+                  className={`hover:bg-slate-50 ${jobStatus === "skipped" || isHidden ? "opacity-50" : ""}`}
                 >
                   <td className="px-4 py-3">
                     <input
@@ -219,12 +249,29 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
                       {job.applyMethod}
                     </a>
                   </td>
+                  <td className="px-4 py-3">
+                    {isHidden ? (
+                      <button
+                        onClick={() => setJobStatus(job.id, "hidden")}
+                        className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                      >
+                        Unhide
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setJobStatus(job.id, "hidden")}
+                        className="text-xs font-medium text-slate-400 hover:text-red-600"
+                      >
+                        Hide
+                      </button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {visibleJobs.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
                   No jobs match this filter.
                 </td>
               </tr>
@@ -234,10 +281,12 @@ export default function JobsDashboard({ jobs }: { jobs: Job[] }) {
       </div>
 
       <p className="mt-4 text-xs text-slate-400">
-        Applied/Skip status is saved in this browser only. Skipped jobs are hidden from
-        &quot;Not applied&quot; but still show under &quot;All&quot; or &quot;Skipped,&quot; and
-        stay in the underlying data so the weekly search won&apos;t re-add them as new. Commute
-        times are estimates — verify door-to-door time before committing.
+        Applied/Skip/Hide status is saved in this browser only. Skipped jobs are hidden from
+        &quot;Not applied&quot; but still show under &quot;All&quot; or &quot;Skipped.&quot;
+        Hidden jobs are excluded from &quot;All&quot; and only appear under &quot;Hidden&quot; —
+        export hidden IDs and commit <code>data/hidden-ids.json</code> so the weekly AI search
+        can re-discover those employers without dedup interference. Commute times are estimates —
+        verify door-to-door time before committing.
       </p>
     </main>
   );
