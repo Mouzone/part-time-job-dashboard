@@ -12,6 +12,7 @@ if (!ANTHROPIC_API_KEY) {
 }
 
 const DATA_PATH = path.join(process.cwd(), "data", "jobs.json");
+const HIDDEN_IDS_PATH = path.join(process.cwd(), "data", "hidden-ids.json");
 const MAX_JOBS = 60;
 
 const SYSTEM_PROMPT = `You are a job-search research assistant. You find real, currently-open
@@ -128,22 +129,45 @@ async function main() {
 
   const existingRaw = await fs.readFile(DATA_PATH, "utf-8");
   const existing = JSON.parse(existingRaw);
-  const existingById = new Map(existing.map((job) => [job.id, job]));
+
+  let hiddenIds = [];
+  try {
+    const hiddenRaw = await fs.readFile(HIDDEN_IDS_PATH, "utf-8");
+    hiddenIds = JSON.parse(hiddenRaw);
+  } catch {
+    // hidden-ids.json may not exist yet
+  }
+  const hiddenSet = new Set(hiddenIds);
+
+  const active = existing.filter((job) => !hiddenSet.has(job.id));
+
+  const existingById = new Map(active.map((job) => [job.id, job]));
 
   // Two duplicate signals, since the same opening often reappears with a
   // slightly different store suffix or a different job-board URL:
   //   1. normalized "employer|role" (strips store numbers/parentheticals)
   //   2. exact apply URL, normalized
+  // Only active (non-hidden) jobs are used for dedup so the AI can
+  // re-discover employers whose previous listing was hidden.
   const seenEmployerRole = new Set(
-    existing.map((job) => normalizedKey(job.employer, job.role))
+    active.map((job) => normalizedKey(job.employer, job.role))
   );
-  const seenApplyUrls = new Set(existing.map((job) => normalizedUrl(job.applyUrl)));
+  const seenApplyUrls = new Set(active.map((job) => normalizedUrl(job.applyUrl)));
 
   const today = new Date().toISOString().slice(0, 10);
   let added = 0;
 
+  let rejected = 0;
   for (const item of found) {
     if (!item.employer || !item.role || !item.applyUrl) continue;
+
+    if (isGenericUrl(item.applyUrl)) {
+      console.warn(
+        `Rejected generic URL for ${item.employer} — ${item.role}: ${item.applyUrl}`
+      );
+      rejected += 1;
+      continue;
+    }
 
     const employerRoleKey = normalizedKey(item.employer, item.role);
     const urlKey = normalizedUrl(item.applyUrl);
@@ -173,7 +197,9 @@ async function main() {
   if (merged.length > MAX_JOBS) merged = merged.slice(0, MAX_JOBS);
 
   await fs.writeFile(DATA_PATH, JSON.stringify(merged, null, 2) + "\n");
-  console.log(`Added ${added} new job lead(s). Total leads: ${merged.length}.`);
+  console.log(
+    `Added ${added} new job lead(s). Rejected ${rejected} generic-URL entr${rejected === 1 ? "y" : "ies"}. Total leads: ${merged.length}.`
+  );
 }
 
 function slugify(input) {
@@ -181,6 +207,33 @@ function slugify(input) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
+}
+
+function isGenericUrl(url) {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.replace(/\/+$/, "");
+    const segments = path.split("/").filter(Boolean);
+    const last = segments[segments.length - 1] ?? "";
+
+    if (segments.length === 0) return true;
+    if (["careers", "jobs", "jobs-search", "job-search"].includes(last)) return true;
+    if (segments.length === 1 && last === "careers") return true;
+
+    if (u.hostname.includes("indeed.com")) {
+      if (u.pathname.startsWith("/q-") || u.pathname.startsWith("/jobs?q=")) return true;
+    }
+    if (u.hostname.includes("ziprecruiter.com")) {
+      if (u.pathname.startsWith("/Jobs/")) return true;
+    }
+    if (u.hostname.includes("jobtoday.com")) {
+      if (u.pathname.includes("/jobs_")) return true;
+    }
+
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 // Strip store numbers, parentheticals, and trailing "- location" suffixes so
