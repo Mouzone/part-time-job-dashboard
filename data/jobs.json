@@ -12,42 +12,6 @@
     "dateFound": "2026-08-20"
   },
   {
-    "id": "wendys-shore-parkway-crew",
-    "employer": "Wendy's - Shore Parkway",
-    "role": "Crew Member",
-    "industry": "Food service",
-    "address": "1602 Shore Pkwy, Brooklyn NY 11214",
-    "commute": "~10 min drive / 20 min bus",
-    "applyUrl": "https://www.wendys.com/careers",
-    "applyMethod": "Wendy's careers site",
-    "notes": "Store #2549, inside Caesar's Bay area",
-    "dateFound": "2026-08-20"
-  },
-  {
-    "id": "citymd-bensonhurst-psr",
-    "employer": "CityMD - Bensonhurst",
-    "role": "Patient Service Representative",
-    "industry": "Office / admin",
-    "address": "Bensonhurst, Brooklyn NY 11214",
-    "commute": "~10 min",
-    "applyUrl": "https://careers.citymd.com/",
-    "applyMethod": "CityMD careers page",
-    "notes": "Front-desk customer service; good admin crossover",
-    "dateFound": "2026-08-20"
-  },
-  {
-    "id": "uhaul-new-utrecht-csr",
-    "employer": "U-Haul",
-    "role": "Customer Service Rep",
-    "industry": "Retail / customer service",
-    "address": "6615 New Utrecht Ave, Brooklyn NY 11219",
-    "commute": "~10-15 min",
-    "applyUrl": "https://careers.uhaul.com/",
-    "applyMethod": "U-Haul careers site",
-    "notes": "Posted range $17-$19/hr",
-    "dateFound": "2026-08-20"
-  },
-  {
     "id": "little-gym-bay-ridge-bensonhurst-host",
     "employer": "The Little Gym of Bay Ridge-Bensonhurst",
     "role": "Party host / instructor",
@@ -60,30 +24,6 @@
     "dateFound": "2026-08-20"
   },
   {
-    "id": "marshalls-86th-st-sales",
-    "employer": "Marshalls (TJX)",
-    "role": "Retail Sales Associate",
-    "industry": "Retail / customer service",
-    "address": "1832 86th St, Brooklyn NY 11214",
-    "commute": "~7 min walk",
-    "applyUrl": "https://jobs.tjx.com/",
-    "applyMethod": "TJX careers site",
-    "notes": "Large store, high turnover, hires PT regularly",
-    "dateFound": "2026-08-20"
-  },
-  {
-    "id": "ups-store-brooklyn-center-associate",
-    "employer": "The UPS Store",
-    "role": "PT Center Associate",
-    "industry": "Retail / customer service",
-    "address": "Various Brooklyn locations",
-    "commute": "Varies",
-    "applyUrl": "https://www.theupsstore.com/careers",
-    "applyMethod": "theupsstore.com careers",
-    "notes": "Retail + light admin; multiple Brooklyn franchises hiring",
-    "dateFound": "2026-08-20"
-  },
-  {
     "id": "samaritan-daytop-village-admin-assistant",
     "employer": "Samaritan Daytop Village",
     "role": "Administrative Assistant (PT, 24 hrs/wk)",
@@ -93,18 +33,6 @@
     "applyUrl": "https://www.indeed.com/q-part-time-administrative-assistant-l-brooklyn,-ny-jobs.html",
     "applyMethod": "Indeed",
     "notes": "Clerical/secretarial; nonprofit",
-    "dateFound": "2026-08-20"
-  },
-  {
-    "id": "catholic-charities-office-assistant",
-    "employer": "Catholic Charities Brooklyn & Queens",
-    "role": "Office Assistant - Part Time",
-    "industry": "Office / admin",
-    "address": "Brooklyn / Queens",
-    "commute": "Check location",
-    "applyUrl": "https://www.ccbq.org/careers",
-    "applyMethod": "ccbq.org careers",
-    "notes": "Reports to Director of Enrollment Services",
     "dateFound": "2026-08-20"
   },
   {
@@ -144,66 +72,6 @@
     "dateFound": "2026-08-20"
   },
   {
-    "id": "bank-of-america-86th-st-teller",
-    "employer": "Bank of America",
-    "role": "Relationship Banker / teller roles",
-    "industry": "Office / admin",
-    "address": "2076 86th St, Brooklyn NY 11214",
-    "commute": "~7 min walk",
-    "applyUrl": "https://careers.bankofamerica.com/",
-    "applyMethod": "careers.bankofamerica.com",
-    "notes": "Branch on 86th St; check for PT teller postings",
-    "dateFound": "2026-08-20"
-  },
-  {
-    "id": "gap-factory-86th-st-sales",
-    "employer": "Gap Factory",
-    "role": "Sales Associate",
-    "industry": "Retail / customer service",
-    "address": "2101 86th St Suite 2109, Brooklyn NY 11214",
-    "commute": "~8 min walk",
-    "applyUrl": "https://www.gapinc.com/en-us/careers",
-    "applyMethod": "gapinc.com careers",
-    "notes": "Two-floor store, steady PT hiring",
-    "dateFound": "2026-08-20"
-  },
-  {
-    "id": "paris-baguette-18th-ave-bakery",
-    "employer": "Paris Baguette",
-    "role": "Bakery cafe associate",
-    "industry": "Food service",
-    "address": "6502 18th Ave, Brooklyn NY 11204",
-    "commute": "~12 min",
-    "applyUrl": "https://www.parisbaguette.com/careers",
-    "applyMethod": "parisbaguette.com careers",
-    "notes": "Open 6am-10pm, many shift options",
-    "dateFound": "2026-08-20"
-  },
-  {
-    "id": "walgreens-18th-ave-csa",
-    "employer": "Walgreens",
-    "role": "Customer service associate",
-    "industry": "Retail / customer service",
-    "address": "6628 18th Ave, Brooklyn NY 11204",
-    "commute": "~12 min",
-    "applyUrl": "https://jobs.walgreens.com/",
-    "applyMethod": "jobs.walgreens.com",
-    "notes": "Chain - formal application process",
-    "dateFound": "2026-08-20"
-  },
-  {
-    "id": "staples-coney-island-ave-sales",
-    "employer": "Staples",
-    "role": "Sales / print & marketing associate",
-    "industry": "Retail / customer service",
-    "address": "1880 Coney Island Ave, Brooklyn NY 11230",
-    "commute": "~20 min",
-    "applyUrl": "https://www.staples.com/careers",
-    "applyMethod": "staples.com/careers",
-    "notes": "Print dept is admin-adjacent",
-    "dateFound": "2026-08-20"
-  },
-  {
     "id": "nyc-pooch-fetch-brooklyn-dog-walker",
     "employer": "NYC Pooch / Fetch Brooklyn",
     "role": "Dog walker / daycare associate",
@@ -213,30 +81,6 @@
     "applyUrl": "https://www.indeed.com/q-part-time-l-bensonhurst,-ny-jobs.html",
     "applyMethod": "Indeed",
     "notes": "Flexible PT schedules, pay-on-demand at Fetch",
-    "dateFound": "2026-08-20"
-  },
-  {
-    "id": "caesars-bay-shopping-center-multiple-retail-roles",
-    "employer": "Caesar's Bay Shopping Center (Target, Best Buy, etc.)",
-    "role": "Multiple retail roles",
-    "industry": "Retail / customer service",
-    "address": "8949 Bay Pkwy, Brooklyn NY 11214",
-    "commute": "~12 min drive / 20 min bus",
-    "applyUrl": "https://www.indeed.com/q-part-time-l-bensonhurst,-ny-jobs.html",
-    "applyMethod": "Each retailer's careers site",
-    "notes": "Whole complex of chains - highest density of PT openings nearby; apply via each retailer's own careers site",
-    "dateFound": "2026-08-20"
-  },
-  {
-    "id": "industry-city-multiple-roles",
-    "employer": "Industry City",
-    "role": "Front desk, building ops, studio assistant, cafe staff",
-    "industry": "Office / admin",
-    "address": "220 36th St, Brooklyn NY 11232",
-    "commute": "~25-30 min on D train",
-    "applyUrl": "https://www.industrycity.com/careers",
-    "applyMethod": "industrycity.com + individual tenants",
-    "notes": "Campus of many employers - front desk, ops, production, coffee",
     "dateFound": "2026-08-20"
   }
 ]
