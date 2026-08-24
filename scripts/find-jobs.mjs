@@ -1,13 +1,16 @@
-// Weekly job-search script. Calls Claude with the web_search tool to find
-// current part-time job leads near 1601 Benson Ave, Brooklyn, NY 11214,
-// then merges any new leads into data/jobs.json. Run via GitHub Actions
-// (weekly cron) or manually with `npm run find-jobs`.
+// Weekly job-search script. Queries the Adzuna jobs API for part-time
+// openings near 1601 Benson Ave, Brooklyn, NY 11214, filters them to a
+// 5-mile radius, and merges any new leads into data/jobs.json. Run via
+// GitHub Actions (weekly cron) or manually with `npm run find-jobs`.
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-if (!ANTHROPIC_API_KEY) {
-  console.error("ANTHROPIC_API_KEY is not set. Add it as a repo secret to run this script.");
+const ADZUNA_APP_ID = process.env.ADZUNA_APP_ID;
+const ADZUNA_APP_KEY = process.env.ADZUNA_APP_KEY;
+if (!ADZUNA_APP_ID || !ADZUNA_APP_KEY) {
+  console.error(
+    "ADZUNA_APP_ID and ADZUNA_APP_KEY must both be set. Add them as repo secrets to run this script."
+  );
   process.exit(1);
 }
 
@@ -15,117 +18,33 @@ const DATA_PATH = path.join(process.cwd(), "data", "jobs.json");
 const HIDDEN_IDS_PATH = path.join(process.cwd(), "data", "hidden-ids.json");
 const MAX_JOBS = 60;
 
-const SYSTEM_PROMPT = `You are a job-search research assistant. You find real, currently-open
-part-time job listings and return them as strict JSON. Never invent listings — only include
-jobs you found through web search with a real application URL.
+// 1601 Benson Ave, Brooklyn, NY 11214
+const HOME_LAT = 40.6006;
+const HOME_LON = -73.9857;
+const MAX_MILES = 5;
 
-Your #1 priority is URL precision. The applyUrl for every job MUST link to the specific,
-individual job posting page — the page that describes that one role and has an "Apply" button
-for it. Never use:
-- A general careers page or job-board homepage (e.g. "walmart.com/careers")
-- A search results page that lists many jobs
-- A company homepage or "about us" page
-If you cannot find the direct posting URL for a job, exclude that job entirely.
-
-Your #2 priority is job specificity. Each listing must be for a concrete, identifiable
-position at a specific location — not a vague "we're hiring" announcement or a seasonal
-recruiting blurb with no role details.`;
-
-const USER_PROMPT = `Search the web for part-time job openings that meet ALL of these criteria:
-
-1. Located within a 20-30 minute commute (door-to-door) of 1601 Benson Ave, Brooklyn, NY 11214,
-   reachable by foot, bus (B1, B6, B64, B82), the D or N subway train, or a mix of those.
-2. Can be applied to online (a job board listing, ATS link, or employer careers page — not
-   walk-in only).
-3. Part-time (not full-time only).
-4. Currently open / actively hiring, not expired.
-
-CRITICAL — URL AND JOB SPECIFICITY RULES:
-
-- The "applyUrl" MUST be the direct URL to the specific job posting — the individual page
-  for that one role, not a general careers page, not a search-results listing, and not a
-  company homepage. Examples of GOOD URLs:
-    • https://www.indeed.com/viewjob?jk=abc123  (specific Indeed posting)
-    • https://walmart.wd5.myworkdayjobs.com/.../job/...  (specific Workday posting)
-    • https://www.linkedin.com/jobs/view/...  (specific LinkedIn posting)
-  Examples of BAD URLs (do NOT use these):
-    • https://www.walmart.com/careers
-    • https://www.indeed.com/q-part-time-l-Brooklyn,-NY-jobs.html
-    • https://www.mcdonalds.com/us/en-us/careers.html
-- Before including a job, click through or search until you have the EXACT posting URL.
-  If the only URL you can find is a general careers page, skip that job — do not include it.
-- The "role" field must be the specific job title as shown on the posting (e.g.
-  "Part-Time Sales Associate", "Weekend Cashier", "Barista — Part Time") — not a vague
-  label like "Team Member" or "Staff" unless that is the actual posting title.
-- The "employer" must be the specific franchise/location (e.g. "Dunkin' Bensonhurst") not
-  just the brand name when a specific store is identifiable.
-
-Find up to 15 such listings. For each one, respond with ONLY a JSON array (no prose, no markdown
-fences) where each item has exactly these fields:
-
-[
-  {
-    "employer": "string — specific location/franchise if identifiable",
-    "role": "string — exact job title from the posting",
-    "industry": "Food service" | "Retail / customer service" | "Office / admin" | "Other",
-    "address": "string — street address of the specific location",
-    "commute": "short human-readable estimate, e.g. '~15 min bus'",
-    "applyUrl": "direct URL to the specific job posting page",
-    "applyMethod": "short label, e.g. 'Indeed listing' or 'Workday posting'",
-    "notes": "short optional context, empty string if none"
-  }
-]`;
+// Adzuna's `where` geocoding is coarse and leaks results from other
+// boroughs and even New Jersey, so we request a generous radius (km) and
+// do the real distance filtering client-side with haversine.
+const SEARCH = {
+  where: "Bensonhurst, Brooklyn, NY",
+  distance: 8,
+  results_per_page: 50,
+  part_time: 1,
+  sort_by: "date",
+  max_days_old: 14,
+};
+const PAGES = 3;
 
 async function main() {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      // Cheapest current Claude model. Web search + structured JSON
-      // extraction is well within what Haiku handles reliably, and this
-      // job runs weekly so cost compounds.
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: USER_PROMPT }],
-      tools: [
-        {
-          type: "web_search_20250305",
-          name: "web_search",
-          max_uses: 20,
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Anthropic API error ${response.status}: ${body}`);
+  const found = [];
+  for (let page = 1; page <= PAGES; page += 1) {
+    const results = await fetchPage(page);
+    if (results.length === 0) break;
+    found.push(...results);
   }
 
-  const result = await response.json();
-  const textBlocks = (result.content ?? [])
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
-
-  const jsonMatch = textBlocks.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    console.error("No JSON array found in model response:\n", textBlocks);
-    process.exit(1);
-  }
-
-  let found;
-  try {
-    found = JSON.parse(jsonMatch[0]);
-  } catch (err) {
-    console.error("Failed to parse JSON from model response:", err);
-    process.exit(1);
-  }
+  console.log(`Fetched ${found.length} raw listing(s) from Adzuna.`);
 
   const existingRaw = await fs.readFile(DATA_PATH, "utf-8");
   const existing = JSON.parse(existingRaw);
@@ -147,8 +66,8 @@ async function main() {
   // slightly different store suffix or a different job-board URL:
   //   1. normalized "employer|role" (strips store numbers/parentheticals)
   //   2. exact apply URL, normalized
-  // Only active (non-hidden) jobs are used for dedup so the AI can
-  // re-discover employers whose previous listing was hidden.
+  // Only active (non-hidden) jobs are used for dedup so a hidden listing's
+  // employer can be re-discovered later.
   const seenEmployerRole = new Set(
     active.map((job) => normalizedKey(job.employer, job.role))
   );
@@ -156,34 +75,41 @@ async function main() {
 
   const today = new Date().toISOString().slice(0, 10);
   let added = 0;
+  let tooFar = 0;
 
-  let rejected = 0;
   for (const item of found) {
-    if (!item.employer || !item.role || !item.applyUrl) continue;
+    const employer = item.company?.display_name;
+    const role = item.title;
+    const applyUrl = item.redirect_url;
+    if (!employer || !role || !applyUrl) continue;
 
-    if (isGenericUrl(item.applyUrl)) {
-      console.warn(
-        `Rejected generic URL for ${item.employer} — ${item.role}: ${item.applyUrl}`
-      );
-      rejected += 1;
+    if (item.contract_time === "full_time") continue;
+
+    if (typeof item.latitude !== "number" || typeof item.longitude !== "number") {
+      tooFar += 1;
+      continue;
+    }
+    const miles = haversineMiles(HOME_LAT, HOME_LON, item.latitude, item.longitude);
+    if (miles > MAX_MILES) {
+      tooFar += 1;
       continue;
     }
 
-    const employerRoleKey = normalizedKey(item.employer, item.role);
-    const urlKey = normalizedUrl(item.applyUrl);
+    const employerRoleKey = normalizedKey(employer, role);
+    const urlKey = normalizedUrl(applyUrl);
     if (seenEmployerRole.has(employerRoleKey) || seenApplyUrls.has(urlKey)) continue;
 
-    const id = uniqueId(slugify(`${item.employer}-${item.role}`), existingById);
+    const id = uniqueId(slugify(`${employer}-${role}`), existingById);
     existingById.set(id, {
       id,
-      employer: item.employer,
-      role: item.role,
-      industry: item.industry || "Other",
-      address: item.address || "",
-      commute: item.commute || "Check estimate",
-      applyUrl: item.applyUrl,
-      applyMethod: item.applyMethod || "Online application",
-      notes: item.notes || "",
+      employer,
+      role,
+      industry: industryFromCategory(item.category?.tag, role),
+      address: item.location?.display_name || "",
+      commute: formatCommute(miles),
+      applyUrl,
+      applyMethod: "Adzuna listing",
+      notes: buildNotes(item),
       dateFound: today,
     });
     seenEmployerRole.add(employerRoleKey);
@@ -198,8 +124,94 @@ async function main() {
 
   await fs.writeFile(DATA_PATH, JSON.stringify(merged, null, 2) + "\n");
   console.log(
-    `Added ${added} new job lead(s). Rejected ${rejected} generic-URL entr${rejected === 1 ? "y" : "ies"}. Total leads: ${merged.length}.`
+    `Added ${added} new job lead(s). Skipped ${tooFar} outside ${MAX_MILES} miles. Total leads: ${merged.length}.`
   );
+}
+
+async function fetchPage(page) {
+  const params = new URLSearchParams({
+    app_id: ADZUNA_APP_ID,
+    app_key: ADZUNA_APP_KEY,
+    "content-type": "application/json",
+    ...Object.fromEntries(Object.entries(SEARCH).map(([k, v]) => [k, String(v)])),
+  });
+  const url = `https://api.adzuna.com/v1/api/jobs/us/search/${page}?${params}`;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Adzuna API error ${response.status} on page ${page}: ${body}`);
+  }
+
+  const result = await response.json();
+  return Array.isArray(result.results) ? result.results : [];
+}
+
+function haversineMiles(lat1, lon1, lat2, lon2) {
+  const R = 3958.8;
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function formatCommute(miles) {
+  if (miles < 1) return "Walking distance (~<1 mi)";
+  if (miles < 2) return `~${miles.toFixed(1)} mi — short bus ride`;
+  if (miles < 3.5) return `~${miles.toFixed(1)} mi — bus or D/N train`;
+  return `~${miles.toFixed(1)} mi — subway or bus transfer`;
+}
+
+// Adzuna's `part-time-jobs` category is a generic catch-all that mixes
+// retail, food service, and office roles, so fall back to the job title
+// when the category tag isn't specific enough.
+function industryFromCategory(tag, title) {
+  switch (tag) {
+    case "hospitality-catering-jobs":
+      return "Food service";
+    case "retail-jobs":
+    case "customer-services-jobs":
+    case "sales-jobs":
+      return "Retail / customer service";
+    case "admin-jobs":
+    case "accounting-finance-jobs":
+    case "pr-advertising-marketing-jobs":
+      return "Office / admin";
+    default:
+      return industryFromTitle(title);
+  }
+}
+
+function industryFromTitle(title) {
+  const t = (title || "").toLowerCase();
+  if (/barista|cook|chef|server|waiter|waitress|bartender|kitchen|restaurant|cashier.*food|food service|deli|dishwasher|crew member/.test(t)) {
+    return "Food service";
+  }
+  if (/retail|sales associate|cashier|store|merchandis|customer service|front desk|host|greeter|stock/.test(t)) {
+    return "Retail / customer service";
+  }
+  if (/administrative|admin assistant|receptionist|office|clerk|data entry|bookkeep|secretary/.test(t)) {
+    return "Office / admin";
+  }
+  return "Other";
+}
+
+function buildNotes(item) {
+  const parts = [];
+  const description = (item.description || "").replace(/\s+/g, " ").trim();
+  if (description) {
+    parts.push(description.length > 140 ? `${description.slice(0, 137)}...` : description);
+  }
+  if (item.salary_min && item.salary_max) {
+    const label = item.salary_is_predicted === "1" ? "est. " : "";
+    parts.push(
+      `${label}$${Math.round(item.salary_min).toLocaleString()}–$${Math.round(item.salary_max).toLocaleString()}/yr`
+    );
+  }
+  return parts.join(" · ");
 }
 
 function slugify(input) {
@@ -207,33 +219,6 @@ function slugify(input) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
-}
-
-function isGenericUrl(url) {
-  try {
-    const u = new URL(url);
-    const path = u.pathname.replace(/\/+$/, "");
-    const segments = path.split("/").filter(Boolean);
-    const last = segments[segments.length - 1] ?? "";
-
-    if (segments.length === 0) return true;
-    if (["careers", "jobs", "jobs-search", "job-search"].includes(last)) return true;
-    if (segments.length === 1 && last === "careers") return true;
-
-    if (u.hostname.includes("indeed.com")) {
-      if (u.pathname.startsWith("/q-") || u.pathname.startsWith("/jobs?q=")) return true;
-    }
-    if (u.hostname.includes("ziprecruiter.com")) {
-      if (u.pathname.startsWith("/Jobs/")) return true;
-    }
-    if (u.hostname.includes("jobtoday.com")) {
-      if (u.pathname.includes("/jobs_")) return true;
-    }
-
-    return false;
-  } catch {
-    return true;
-  }
 }
 
 // Strip store numbers, parentheticals, and trailing "- location" suffixes so
