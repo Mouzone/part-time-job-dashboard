@@ -1,6 +1,7 @@
 // Weekly job-search orchestrator. Runs all job-board providers in parallel,
 // collects results, filters by location and date, deduplicates against
-// existing active jobs, and merges new leads into data/jobs.json.
+// existing active jobs using a two-layer approach (deterministic + AI),
+// and merges new leads into data/jobs.json.
 // Run via GitHub Actions (weekly cron) or manually with `npm run find-jobs`.
 import fs from "node:fs/promises";
 
@@ -13,12 +14,12 @@ import {
   haversineMiles,
   formatCommute,
   slugify,
-  normalizedKey,
   normalizedUrl,
   uniqueId,
   isWithinNeighborhood,
   daysSince,
   industryFromTitle,
+  isDuplicateJob,
   loadExistingJobs,
 } from "./_shared.mjs";
 
@@ -29,6 +30,7 @@ import { fetchJobs as fetchSerpApi } from "./providers/serpapi-google.mjs";
 import { fetchJobs as fetchCraigslist } from "./providers/craigslist.mjs";
 import { fetchJobs as fetchWorkday } from "./providers/workday.mjs";
 import { fetchJobs as fetchAnthropic } from "./providers/anthropic-search.mjs";
+import { aiDedupJobs } from "./dedup-ai.mjs";
 
 const PROVIDERS = [
   { name: "adzuna", fetch: fetchAdzuna },
@@ -59,11 +61,11 @@ async function main() {
 
   const { active } = await loadExistingJobs();
 
+  // --- Layer 1: deterministic dedup ---
+  // Check each new candidate against existing active jobs AND already-accepted
+  // new candidates using fuzzy employer+role matching and URL matching.
   const existingById = new Map(active.map((job) => [job.id, job]));
-  const seenEmployerRole = new Set(
-    active.map((job) => normalizedKey(job.employer, job.role))
-  );
-  const seenApplyUrls = new Set(active.map((job) => normalizedUrl(job.applyUrl)));
+  const accepted = []; // new jobs that passed dedup so far
 
   const today = new Date().toISOString().slice(0, 10);
   let added = 0;
@@ -93,16 +95,39 @@ async function main() {
       continue;
     }
 
-    // Dedup
-    const employerRoleKey = normalizedKey(item.employer, item.role);
-    const urlKey = normalizedUrl(item.applyUrl);
-    if (seenEmployerRole.has(employerRoleKey) || seenApplyUrls.has(urlKey)) {
+    const candidate = {
+      employer: item.employer,
+      role: item.role,
+      applyUrl: item.applyUrl,
+    };
+
+    // Check against existing active jobs
+    let isDupe = false;
+    for (const existing of active) {
+      if (isDuplicateJob(candidate, existing)) {
+        isDupe = true;
+        break;
+      }
+    }
+    if (isDupe) {
+      dupes += 1;
+      continue;
+    }
+
+    // Check against already-accepted new candidates
+    for (const acceptedJob of accepted) {
+      if (isDuplicateJob(candidate, acceptedJob)) {
+        isDupe = true;
+        break;
+      }
+    }
+    if (isDupe) {
       dupes += 1;
       continue;
     }
 
     const id = uniqueId(slugify(`${item.employer}-${item.role}`), existingById);
-    existingById.set(id, {
+    const job = {
       id,
       employer: item.employer,
       role: item.role,
@@ -113,23 +138,49 @@ async function main() {
       applyMethod: item.applyMethod || "Online application",
       notes: item.notes || "",
       dateFound: today,
-    });
-    seenEmployerRole.add(employerRoleKey);
-    seenApplyUrls.add(urlKey);
+      _hasCoords: typeof item.lat === "number",
+    };
+    existingById.set(id, job);
+    accepted.push(job);
     added += 1;
   }
 
-  let merged = Array.from(existingById.values()).sort((a, b) =>
-    b.dateFound.localeCompare(a.dateFound)
+  console.log(
+    `Layer 1 (deterministic): added ${added}, skipped ${dupes} dupes, ` +
+      `${tooFar} too far, ${tooOld} too old.`
   );
+
+  // --- Layer 2: AI dedup ---
+  // Send the full merged list to Claude to catch cross-provider duplicates
+  // that fuzzy matching missed. Only runs if ANTHROPIC_API_KEY is set.
+  let merged = Array.from(existingById.values());
+
+  if (added > 0) {
+    const removeSet = await aiDedupJobs(merged);
+
+    if (removeSet.size > 0) {
+      let aiRemoved = 0;
+      for (const id of removeSet) {
+        if (existingById.delete(id)) {
+          aiRemoved += 1;
+        }
+      }
+      merged = Array.from(existingById.values());
+      console.log(`Layer 2 (AI): removed ${aiRemoved} additional duplicate(s).`);
+    }
+  }
+
+  // Sort, slice, write
+  merged.sort((a, b) => b.dateFound.localeCompare(a.dateFound));
   if (merged.length > MAX_JOBS) merged = merged.slice(0, MAX_JOBS);
 
-  await fs.writeFile(DATA_PATH, JSON.stringify(merged, null, 2) + "\n");
+  // Strip internal fields before writing
+  const clean = merged.map(({ _hasCoords, ...rest }) => rest);
+
+  await fs.writeFile(DATA_PATH, JSON.stringify(clean, null, 2) + "\n");
   console.log(
-    `\nAdded ${added} new job lead(s). ` +
-      `Skipped ${tooFar} outside ${MAX_MILES} miles, ` +
-      `${tooOld} too old, ${dupes} duplicates. ` +
-      `Total leads: ${merged.length}.`
+    `\nFinal: ${clean.length} total job leads ` +
+      `(${added} new this run).`
   );
 }
 

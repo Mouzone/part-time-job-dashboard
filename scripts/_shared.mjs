@@ -165,6 +165,108 @@ export function normalizedKey(employer, role) {
   return `${clean(employer)}|${clean(role)}`;
 }
 
+// --- Layer 1: improved deterministic dedup ---
+
+const EMPLOYER_ALIASES = new Map([
+  ["cvs health", "cvs"],
+  ["cvs pharmacy", "cvs"],
+  ["cvs caremark", "cvs"],
+  ["tj maxx", "tjx"],
+  ["tjmaxx", "tjx"],
+  ["marshalls", "tjx"],
+  ["homegoods", "tjx"],
+  ["home goods", "tjx"],
+  ["tjx companies", "tjx"],
+  ["target corp", "target"],
+  ["target stores", "target"],
+  ["target corporation", "target"],
+  ["mcdonalds", "mcdonalds"],
+  ["mcdonald's", "mcdonalds"],
+  ["starbucks corp", "starbucks"],
+  ["starbucks coffee", "starbucks"],
+  ["the home depot", "home depot"],
+  ["dunkin donuts", "dunkin"],
+  ["dunkin'", "dunkin"],
+  ["walgreen co", "walgreens"],
+  ["walgreens pharmacy", "walgreens"],
+]);
+
+const CORP_SUFFIXES = /\b(inc|llc|corp|corporation|company|co|ltd|limited|lp|llp|pllc)\b\.?/gi;
+
+export function canonicalEmployer(name) {
+  if (!name) return "";
+  let s = name.toLowerCase().trim();
+  for (const [alias, canonical] of EMPLOYER_ALIASES) {
+    if (s.includes(alias)) return canonical;
+  }
+  s = s.replace(CORP_SUFFIXES, "").replace(/[^a-z0-9]+/g, " ").trim();
+  return s;
+}
+
+export function tokenizeRole(role) {
+  if (!role) return [];
+  return role
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, "")
+    .replace(/#\d+/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 1);
+}
+
+const ROLE_STOPWORDS = new Set([
+  "part", "time", "full", "pt", "ft", " needed", "wanted", "hiring",
+  "job", "jobs", "position", "opportunity", "temp", "temporary",
+  "seasonal", "weekend", "weekday", "evening", "morning", "night",
+  "asap", "immediate", "now", "local", "near", "me",
+]);
+
+export function rolesMatch(roleA, roleB) {
+  const tokensA = tokenizeRole(roleA).filter((t) => !ROLE_STOPWORDS.has(t));
+  const tokensB = tokenizeRole(roleB).filter((t) => !ROLE_STOPWORDS.has(t));
+  if (tokensA.length === 0 || tokensB.length === 0) return false;
+
+  const setA = new Set(tokensA);
+  const setB = new Set(tokensB);
+
+  // Subset check: "Cashier" ⊂ "Front End Cashier"
+  const smaller = setA.size <= setB.size ? setA : setB;
+  const larger = setA.size <= setB.size ? setB : setA;
+  let subsetHits = 0;
+  for (const t of smaller) {
+    if (larger.has(t)) subsetHits += 1;
+  }
+  if (subsetHits === smaller.size && smaller.size >= 1) return true;
+
+  // Jaccard similarity ≥ 0.5
+  let intersection = 0;
+  for (const t of setA) {
+    if (setB.has(t)) intersection += 1;
+  }
+  const union = setA.size + setB.size - intersection;
+  return union > 0 && intersection / union >= 0.5;
+}
+
+export function isDuplicateJob(jobA, jobB) {
+  // URL exact match (normalized)
+  if (normalizedUrl(jobA.applyUrl) === normalizedUrl(jobB.applyUrl)) return true;
+
+  // Employer canonical match + role fuzzy match
+  const empA = canonicalEmployer(jobA.employer);
+  const empB = canonicalEmployer(jobB.employer);
+  if (!empA || !empB) return false;
+
+  // Employer match: exact canonical, or one is a substring of the other
+  const empMatch =
+    empA === empB ||
+    empA.includes(empB) ||
+    empB.includes(empA);
+
+  if (!empMatch) return false;
+
+  return rolesMatch(jobA.role, jobB.role);
+}
+
 export function normalizedUrl(url) {
   return url.trim().toLowerCase().replace(/\/+$/, "");
 }
