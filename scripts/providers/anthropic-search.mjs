@@ -100,6 +100,7 @@ export async function fetchJobs() {
         applyUrl: item.applyUrl,
         applyMethod: item.applyMethod || "Online application",
         notes: (item.notes || "").slice(0, 140),
+        description: item.notes || "",
         industry: industryFromTitle(item.role),
         postedDate: item.postedDate || undefined,
       }));

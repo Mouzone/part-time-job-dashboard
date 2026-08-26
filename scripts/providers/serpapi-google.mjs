@@ -65,6 +65,7 @@ export async function fetchJobs() {
           applyUrl,
           applyMethod: via,
           notes: notesParts.join(" · "),
+          description,
           industry: industryFromTitle(item.title),
           postedDate: item.detected_extensions?.posted_at,
         });

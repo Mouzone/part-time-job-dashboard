@@ -105,6 +105,7 @@ function parsePostingPage(html, url) {
     applyUrl: url,
     applyMethod: "Craigslist posting",
     notes: description.length > 140 ? `${description.slice(0, 137)}...` : description,
+    description,
     industry: industryFromTitle(title),
     lat,
     lng,

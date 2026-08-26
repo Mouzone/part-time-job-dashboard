@@ -63,6 +63,7 @@ export async function fetchJobs() {
       applyUrl: item.url || "",
       applyMethod: "CareerJet listing",
       notes: notesParts.join(" · "),
+      description,
       industry: industryFromTitle(item.title),
       postedDate: item.date,
     });

@@ -11,6 +11,7 @@ export const MAX_DAYS_OLD = 14;
 
 export const DATA_PATH = path.join(process.cwd(), "data", "jobs.json");
 export const HIDDEN_IDS_PATH = path.join(process.cwd(), "data", "hidden-ids.json");
+export const PROFILE_PATH = path.join(process.cwd(), "data", "profile.json");
 
 // Neighborhoods within ~5 miles of 1601 Benson Ave, used for string-based
 // filtering when a provider doesn't return lat/lng coordinates.
@@ -305,6 +306,42 @@ export function industryFromTitle(title) {
   return "Other";
 }
 
+// Keywords that indicate a job the user is not qualified for or cannot accept.
+// Checked against the role title and full description text (case-insensitive).
+const EXCLUSION_KEYWORDS = [
+  // Teaching / formal instruction (requires credentials or fixed schedules)
+  "teacher", "teaching", "professor", "adjunct", "lecturer",
+  "curriculum developer", "education director",
+  // Medical / healthcare licensed
+  "registered nurse", "rn ", "licensed practical nurse", "lpn ",
+  "certified nursing assistant", "cna ", "medical assistant",
+  "emt", "paramedic", "physical therapist", "occupational therapist",
+  "speech therapist", "pharmacist", "physician", "nurse practitioner",
+  "licensed clinical", "licensed master social worker", "lmsw",
+  // CDL / commercial driving
+  "cdl", "commercial driver", "class a", "class b driver",
+  "truck driver", "delivery driver (cdl)",
+  // Armed security
+  "armed security", "armed guard", "firearms permit",
+  // Advanced degrees
+  "master's degree", "master degree", "mba required", "master's required",
+  // Gender / language restrictions
+  "female only", "women only", "must be female",
+  "yiddish required", "yiddish speaking", "yiddish fluent",
+  "hebrew required", "hebrew speaking", "hebrew fluent",
+  // Certification requirements the user doesn't have
+  "cpr certification required", "first aid certification required",
+  "teaching certificate", "teaching license", "teaching credential",
+];
+
+export function failsKeywordFilter(item) {
+  const text = `${item.role || ""} ${item.description || ""} ${item.notes || ""}`.toLowerCase();
+  for (const keyword of EXCLUSION_KEYWORDS) {
+    if (text.includes(keyword)) return keyword;
+  }
+  return null;
+}
+
 export async function loadExistingJobs() {
   let existing = [];
   try {
@@ -325,4 +362,14 @@ export async function loadExistingJobs() {
   const active = existing.filter((job) => !hiddenSet.has(job.id));
 
   return { existing, active };
+}
+
+export async function loadProfile() {
+  try {
+    const raw = await fs.readFile(PROFILE_PATH, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    console.warn("[profile] No profile.json found — qualification vetting disabled.");
+    return null;
+  }
 }

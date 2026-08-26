@@ -1,7 +1,7 @@
 // Weekly job-search orchestrator. Runs all job-board providers in parallel,
-// collects results, filters by location and date, deduplicates against
-// existing active jobs using a two-layer approach (deterministic + AI),
-// and merges new leads into data/jobs.json.
+// collects results, filters by location, date, and qualifications (keyword +
+// AI), deduplicates against existing active jobs using a two-layer approach
+// (deterministic + AI), and merges new leads into data/jobs.json.
 // Run via GitHub Actions (weekly cron) or manually with `npm run find-jobs`.
 import fs from "node:fs/promises";
 
@@ -21,6 +21,8 @@ import {
   industryFromTitle,
   isDuplicateJob,
   loadExistingJobs,
+  loadProfile,
+  failsKeywordFilter,
 } from "./_shared.mjs";
 
 import { fetchJobs as fetchAdzuna } from "./providers/adzuna.mjs";
@@ -31,6 +33,7 @@ import { fetchJobs as fetchCraigslist } from "./providers/craigslist.mjs";
 import { fetchJobs as fetchWorkday } from "./providers/workday.mjs";
 import { fetchJobs as fetchAnthropic } from "./providers/anthropic-search.mjs";
 import { aiDedupJobs } from "./dedup-ai.mjs";
+import { vetQualifications } from "./vet-qualifications.mjs";
 
 const PROVIDERS = [
   { name: "adzuna", fetch: fetchAdzuna },
@@ -60,6 +63,7 @@ async function main() {
   console.log(`\nTotal raw candidates across all providers: ${allRaw.length}`);
 
   const { active } = await loadExistingJobs();
+  const profile = await loadProfile();
 
   // --- Layer 1: deterministic dedup ---
   // Check each new candidate against existing active jobs AND already-accepted
@@ -72,6 +76,7 @@ async function main() {
   let tooFar = 0;
   let tooOld = 0;
   let dupes = 0;
+  let unqualified = 0;
 
   for (const item of allRaw) {
     if (!item.employer || !item.role || !item.applyUrl) continue;
@@ -93,6 +98,18 @@ async function main() {
     if (daysSince(item.postedDate) > 14) {
       tooOld += 1;
       continue;
+    }
+
+    // Keyword pre-filter: reject obvious qualification mismatches
+    if (profile) {
+      const matchedKeyword = failsKeywordFilter(item);
+      if (matchedKeyword) {
+        unqualified += 1;
+        console.log(
+          `  [keyword-filter] Rejected "${item.role}" at ${item.employer} — matched "${matchedKeyword}"`
+        );
+        continue;
+      }
     }
 
     const candidate = {
@@ -139,6 +156,8 @@ async function main() {
       notes: item.notes || "",
       dateFound: today,
       _hasCoords: typeof item.lat === "number",
+      description: item.description || "",
+      _vetId: id,
     };
     existingById.set(id, job);
     accepted.push(job);
@@ -147,8 +166,31 @@ async function main() {
 
   console.log(
     `Layer 1 (deterministic): added ${added}, skipped ${dupes} dupes, ` +
-      `${tooFar} too far, ${tooOld} too old.`
+      `${tooFar} too far, ${tooOld} too old, ${unqualified} unqualified (keyword).`
   );
+
+  // --- Qualification vetting (AI) ---
+  // Send new candidates with full descriptions to Claude to evaluate
+  // whether the user is qualified. Only runs if profile and API key are set.
+  if (profile && added > 0) {
+    const rejectMap = await vetQualifications(accepted, profile);
+
+    if (rejectMap.size > 0) {
+      let vetRemoved = 0;
+      for (const [vetId, reason] of rejectMap) {
+        if (existingById.has(vetId)) {
+          existingById.delete(vetId);
+          vetRemoved += 1;
+          const job = accepted.find((j) => j._vetId === vetId);
+          console.log(
+            `  [ai-vet] Rejected "${job?.role || vetId}" at ${job?.employer || "?"} — ${reason}`
+          );
+        }
+      }
+      added -= vetRemoved;
+      console.log(`Qualification vetting (AI): removed ${vetRemoved} unqualified job(s).`);
+    }
+  }
 
   // --- Layer 2: AI dedup ---
   // Send the full merged list to Claude to catch cross-provider duplicates
@@ -175,7 +217,7 @@ async function main() {
   if (merged.length > MAX_JOBS) merged = merged.slice(0, MAX_JOBS);
 
   // Strip internal fields before writing
-  const clean = merged.map(({ _hasCoords, ...rest }) => rest);
+  const clean = merged.map(({ _hasCoords, description, _vetId, ...rest }) => rest);
 
   await fs.writeFile(DATA_PATH, JSON.stringify(clean, null, 2) + "\n");
   console.log(

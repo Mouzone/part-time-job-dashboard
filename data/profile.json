@@ -1,0 +1,22 @@
+{
+  "education": "Bachelor's degree",
+  "studentStatus": "Full-time student",
+  "scheduleNeeds": "Fully flexible / on-call — cannot commit to fixed recurring shifts (e.g. teaching schedules). Prioritizes studies, needs a job that accommodates a changing semester schedule.",
+  "skills": [
+    "Retail / customer service",
+    "Food service / hospitality",
+    "Office / admin / data entry",
+    "Stock / inventory",
+    "Childcare / youth programs",
+    "Tech / digital / social media",
+    "Tutoring (non-teaching, subject-based)"
+  ],
+  "languages": ["English"],
+  "excludedJobTypes": [
+    "Teaching / formal instruction positions (teacher, professor, instructor requiring credentials or fixed class schedules)",
+    "Medical / healthcare licensed roles (RN, CNA, EMT, therapist, pharmacist, medical assistant requiring certification)",
+    "CDL / commercial driving jobs",
+    "Armed security guard (requires firearms permit)"
+  ],
+  "additionalNotes": "No Master's degree. No professional licenses or certifications. No commercial driver's license. Does not speak Yiddish, Hebrew, Spanish, or Russian. Not seeking female-only or gender-restricted roles."
+}

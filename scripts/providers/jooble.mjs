@@ -36,13 +36,15 @@ export async function fetchJobs() {
     if (daysSince(item.updated) > MAX_DAYS_OLD) continue;
     if (!isWithinNeighborhood(item.location)) continue;
 
+    const snippet = (item.snippet || "").replace(/\s+/g, " ").trim();
     jobs.push({
       employer: item.company || "",
       role: item.title || "",
       address: item.location || "",
       applyUrl: item.link || "",
       applyMethod: "Jooble listing",
-      notes: (item.snippet || "").replace(/\s+/g, " ").trim().slice(0, 140),
+      notes: snippet.slice(0, 140),
+      description: snippet,
       industry: industryFromTitle(item.title),
       postedDate: item.updated,
     });

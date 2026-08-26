@@ -55,6 +55,7 @@ export async function fetchJobs() {
           applyUrl: post.externalUrl || "",
           applyMethod: `${chain.name} careers`,
           notes: "",
+          description: post.title || "",
           industry: industryFromTitle(post.title),
           postedDate: post.postedOn,
         });

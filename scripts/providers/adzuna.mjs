@@ -56,6 +56,7 @@ export async function fetchJobs() {
       applyUrl: item.redirect_url || "",
       applyMethod: "Adzuna listing",
       notes: notesParts.join(" · "),
+      description,
       industry: industryFromCategory(item.category?.tag, item.title),
       lat: item.latitude,
       lng: item.longitude,

@@ -14,9 +14,9 @@ can be applied to online.
 `.github/workflows/weekly-job-search.yml` runs every Monday and calls
 `scripts/find-jobs.mjs`, which queries seven job sources in parallel for
 recent part-time openings near Bensonhurst, filters them to a 5-mile
-radius, deduplicates, and merges any new ones into `data/jobs.json`. A
-commit is pushed automatically when new leads are found, which triggers a
-new Vercel deployment.
+radius, vets them for qualification matches, deduplicates, and merges any
+new ones into `data/jobs.json`. A commit is pushed automatically when new
+leads are found, which triggers a new Vercel deployment.
 
 ### Job sources
 
@@ -39,6 +39,32 @@ others still run. Providers with no credentials are silently skipped.
   miles from 1601 Benson Ave.
 - Listings without coordinates are filtered by neighborhood string match
   against a whitelist of Brooklyn and Staten Island neighborhoods.
+
+### Qualification vetting
+
+Jobs are vetted against the user's profile in `data/profile.json` using a
+two-stage approach:
+
+1. **Keyword pre-filter** (`failsKeywordFilter` in `_shared.mjs`): Fast,
+   free first pass that rejects jobs with obvious qualification mismatches
+   (teaching, medical licenses, CDL, armed security, advanced degrees,
+   gender/language restrictions). Checks the job title, full description,
+   and notes against a blocklist of exclusion keywords.
+
+2. **AI qualification vetting** (`scripts/vet-qualifications.mjs`): Sends
+   each candidate job's full description along with the user profile to
+   Claude Haiku for nuanced evaluation. Catches subtle requirements that
+   keyword filters miss (e.g. "Yiddish preferred", "female only",
+   credential requirements buried in description text). Fail-open: if the
+   API call fails, all keyword-filtered candidates are kept.
+
+The profile (`data/profile.json`) captures education level, student status,
+schedule needs, skills, languages, excluded job types, and additional
+notes. Edit this file to adjust what jobs are filtered.
+
+Full job descriptions are preserved from providers during the pipeline
+(stored in a transient `description` field) but stripped before persisting
+to `data/jobs.json` — only the 140-char `notes` field is saved for display.
 
 ### To enable it
 
